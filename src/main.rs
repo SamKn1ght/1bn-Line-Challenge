@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::time::Instant;
+use rustc_hash::FxHashMap;
 
 struct Data {
     sum: f64,
@@ -30,7 +31,7 @@ impl Data {
 // Line by Line Hashmap runtime: 272s
 // Line by Line BTreeMap runtime: 372s - Slower as Tree lookup is slower than HashMap
 // Line by Line HashMap + BTreeSet stations runtime: 469s - Slower as sorting at the end is faster
-
+// Line by Line FxHashMap runtime: 253s - Faster as it uses a faster hashing algorithm
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
@@ -40,7 +41,7 @@ fn main() {
 
     let start = Instant::now();
 
-    let mut map = HashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
+    let mut map = FxHashMap::<String, Data>::with_capacity_and_hasher(MAX_UNIQUE_STATIONS, Default::default());
 
     let file = File::open(ADDRESS).expect("File not found");
     let reader = BufReader::with_capacity(MAX_LINE_LENGTH, file);
