@@ -1,3 +1,6 @@
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::fmt::{self, Display};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -35,6 +38,7 @@ impl Data {
 // Buffer with 50 lines FxHashMap runtime: 169s
 // Buffer with 25 lines FxHashMap runtime: 168s
 // Specify general edits to the Cargo.toml file runtime: 150s
+// Switch to using mimalloc runtime: 85s
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
