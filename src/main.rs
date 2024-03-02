@@ -39,6 +39,7 @@ impl Data {
 // Buffer with 25 lines FxHashMap runtime: 168s - 61%
 // Specify general edits to the Cargo.toml file runtime: 150s - 55%
 // Switch to using mimalloc runtime: 85s - 31%
+// Optimised string splitting runtime: 80s - 29%
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
@@ -55,10 +56,15 @@ fn main() {
     println!("Station: Min/Mean/Max");
     let start_read = Instant::now();
     for line in reader.lines().map_while(Result::ok) {
-        let mut line_data = line.split(LINE_DELIMITER);
-        let station = line_data.next().expect("Invalid station").to_string();
-        let value = line_data.next().expect("No value found").parse::<f64>().expect("Invalid value");
-        map.entry(station)
+        let (station, value_str) = match line.split_once(LINE_DELIMITER) {
+            Some((station, value_str)) => (station, value_str),
+            None => unreachable!("Invalid line"),
+        };
+        let value = match value_str.parse::<f64>() {
+            Ok(value) => value,
+            Err(_) => unreachable!("Invalid value"),
+        };
+        map.entry(station.to_string())
             .and_modify(|data| data.update(value))
             .or_insert_with(|| Data { sum: value, count: 1.0, min: value, max: value });
     }
