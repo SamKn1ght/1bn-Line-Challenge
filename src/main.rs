@@ -40,6 +40,7 @@ impl Data {
 // Specify general edits to the Cargo.toml file runtime: 150s - 55%
 // Switch to using mimalloc runtime: 85s - 31%
 // Optimised string splitting runtime: 80s - 29%
+// Increased buffer size runtime: 76s - 28%
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
@@ -52,7 +53,7 @@ fn main() {
     let mut map = FxHashMap::<String, Data>::with_capacity_and_hasher(MAX_UNIQUE_STATIONS, Default::default());
 
     let file = File::open(ADDRESS).expect("File not found");
-    let reader = BufReader::with_capacity(MAX_LINE_LENGTH * 25, file);
+    let reader = BufReader::with_capacity(MAX_LINE_LENGTH * 1_000, file);
     println!("Station: Min/Mean/Max");
     let start_read = Instant::now();
     for line in reader.lines().map_while(Result::ok) {
