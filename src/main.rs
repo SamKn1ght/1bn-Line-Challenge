@@ -9,19 +9,19 @@ use ahash::AHashMap;
 
 struct Data {
     sum: f64,
-    count: f64,
+    count: u32,
     min: f64,
     max: f64,
 }
 impl Display for Data {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}/{:.1}/{}", self.min, self.sum/self.count, self.max)
+        write!(f, "{}/{:.1}/{}", self.min, self.sum / self.count as f64, self.max)
     }
 }
 impl Data {
     fn update(&mut self, value: f64) {
         self.sum += value;
-        self.count += 1.0;
+        self.count += 1;
         if value < self.min {
             self.min = value;
         } else if value > self.max {
@@ -42,6 +42,7 @@ impl Data {
 // Optimised string splitting runtime: 80s - 29%
 // Increased buffer size runtime: 76s - 28%
 // Switched to AHashMap runtime: 76s - 28%
+// Switched count to be u32 runtime: 76s - 28%
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
@@ -68,7 +69,7 @@ fn main() {
         };
         map.entry(station.to_string())
             .and_modify(|data| data.update(value))
-            .or_insert_with(|| Data { sum: value, count: 1.0, min: value, max: value });
+            .or_insert_with(|| Data { sum: value, count: 1, min: value, max: value });
     }
     let end_read = Instant::now();
     println!("Sorting Stations");
