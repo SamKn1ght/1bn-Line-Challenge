@@ -32,6 +32,9 @@ impl Data {
 // Line by Line BTreeMap runtime: 372s - Slower as Tree lookup is slower than HashMap
 // Line by Line HashMap + BTreeSet stations runtime: 469s - Slower as sorting at the end is faster
 // Line by Line FxHashMap runtime: 253s - Faster as it uses a faster hashing algorithm
+// Buffer with 100 lines FxHashMap runtime: 169s - Faster as it readuces read
+// Buffer with 50 lines FxHashMap runtime: 169s
+// Buffer with 25 lines FxHashMap runtime: 168s
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
@@ -44,7 +47,7 @@ fn main() {
     let mut map = FxHashMap::<String, Data>::with_capacity_and_hasher(MAX_UNIQUE_STATIONS, Default::default());
 
     let file = File::open(ADDRESS).expect("File not found");
-    let reader = BufReader::with_capacity(MAX_LINE_LENGTH, file);
+    let reader = BufReader::with_capacity(MAX_LINE_LENGTH * 25, file);
     println!("Station: Min/Mean/Max");
     let start_read = Instant::now();
     for line in reader.lines().map_while(Result::ok) {
