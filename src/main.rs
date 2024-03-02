@@ -30,15 +30,15 @@ impl Data {
     }
 }
 
-// Line by Line Hashmap runtime: 272s
+// Line by Line Hashmap runtime: 272s - 100%
 // Line by Line BTreeMap runtime: 372s - Slower as Tree lookup is slower than HashMap
 // Line by Line HashMap + BTreeSet stations runtime: 469s - Slower as sorting at the end is faster
-// Line by Line FxHashMap runtime: 253s - Faster as it uses a faster hashing algorithm
+// Line by Line FxHashMap runtime: 253s - Faster as it uses a faster hashing algorithm - 93%
 // Buffer with 100 lines FxHashMap runtime: 169s - Faster as it readuces read
 // Buffer with 50 lines FxHashMap runtime: 169s
-// Buffer with 25 lines FxHashMap runtime: 168s
-// Specify general edits to the Cargo.toml file runtime: 150s
-// Switch to using mimalloc runtime: 85s
+// Buffer with 25 lines FxHashMap runtime: 168s - 61%
+// Specify general edits to the Cargo.toml file runtime: 150s - 55%
+// Switch to using mimalloc runtime: 85s - 31%
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
