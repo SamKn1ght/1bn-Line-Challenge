@@ -14,5 +14,5 @@ panic = "abort"
 rustflags = ["-C", "target-cpu=native"]
 
 [dependencies]
+ahash = "0.8.10"
 mimalloc = "0.1.39"
-rustc-hash = "1.1.0"

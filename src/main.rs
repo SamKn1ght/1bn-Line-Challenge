@@ -5,7 +5,7 @@ use std::fmt::{self, Display};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::time::Instant;
-use rustc_hash::FxHashMap;
+use ahash::AHashMap;
 
 struct Data {
     sum: f64,
@@ -41,6 +41,7 @@ impl Data {
 // Switch to using mimalloc runtime: 85s - 31%
 // Optimised string splitting runtime: 80s - 29%
 // Increased buffer size runtime: 76s - 28%
+// Switched to AHashMap runtime: 76s - 28%
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
@@ -50,7 +51,7 @@ fn main() {
 
     let start = Instant::now();
 
-    let mut map = FxHashMap::<String, Data>::with_capacity_and_hasher(MAX_UNIQUE_STATIONS, Default::default());
+    let mut map = AHashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
 
     let file = File::open(ADDRESS).expect("File not found");
     let reader = BufReader::with_capacity(MAX_LINE_LENGTH * 1_000, file);
