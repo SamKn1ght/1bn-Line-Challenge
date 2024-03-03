@@ -30,20 +30,22 @@ impl Data {
     }
 }
 
-// Line by Line Hashmap runtime: 272s - 100%
-// Line by Line BTreeMap runtime: 372s - Slower as Tree lookup is slower than HashMap
-// Line by Line HashMap + BTreeSet stations runtime: 469s - Slower as sorting at the end is faster
-// Line by Line FxHashMap runtime: 253s - Faster as it uses a faster hashing algorithm - 93%
-// Buffer with 100 lines FxHashMap runtime: 169s - Faster as it readuces read
-// Buffer with 50 lines FxHashMap runtime: 169s
-// Buffer with 25 lines FxHashMap runtime: 168s - 61%
-// Specify general edits to the Cargo.toml file runtime: 150s - 55%
-// Switch to using mimalloc runtime: 85s - 31%
-// Optimised string splitting runtime: 80s - 29%
-// Increased buffer size runtime: 76s - 28%
-// Switched to AHashMap runtime: 76s - 28%
-// Switched count to be u32 runtime: 76s - 28%
-// Changed to line by line reading runtime: 69s - 25%
+/*
+Line by Line Hashmap runtime: 272s - 100%
+Line by Line BTreeMap runtime: 372s - Slower as Tree lookup is slower than HashMap
+Line by Line HashMap + BTreeSet stations runtime: 469s - Slower as sorting at the end is faster
+Line by Line FxHashMap runtime: 253s - Faster as it uses a faster hashing algorithm - 93%
+Buffer with 100 lines FxHashMap runtime: 169s - Faster as it reduces reads to disk
+Buffer with 50 lines FxHashMap runtime: 169s
+Buffer with 25 lines FxHashMap runtime: 168s - 61%
+Specify general edits to the Cargo.toml file runtime: 150s - 55% - Settings allow for beter optimisation
+Switch to using mimalloc runtime: 85s - 31% - Improved memory allocation
+Optimised string splitting runtime: 80s - 29% - Faster as it is a more specific split
+Increased buffer size runtime: 76s - 28% - Reduces the number of reads to disk
+Switched to AHashMap runtime: 76s - 28%
+Switched count to be u32 runtime: 76s - 28%
+Changed to line by line reading runtime: 69s - 25% - Faster as it reduces memory allocations
+*/
 
 fn main() {
     const ADDRESS: &str = "../measurements.txt";
