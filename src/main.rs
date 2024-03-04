@@ -4,10 +4,12 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use std::fmt::{self, Display};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::thread::JoinHandle;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use ahash::AHashMap;
+use rayon::{ThreadPoolBuilder, Scope};
 
+#[derive(Debug)]
 struct Data {
     sum: f64,
     count: u32,
@@ -55,15 +57,16 @@ Switched count to be u32 runtime: 76s - 28%
 Changed to line by line reading runtime: 69s - 25% - Faster as it reduces memory allocations
 Attempted using a GPerf hash function dramatic runtime slowdown; reverted
 Added multiple threads for data processing runtime: 40s - 15% - Faster as the work is spread across the CPU
+Switched to using a rayon pool thread collecting results runtime: 40s - 15%
 */
 
 const ADDRESS: &str = "../measurements.txt";
 const LINE_DELIMITER: &str = ";";
 const MAX_LINE_LENGTH: usize = 107; // Line formatting: (name: 100);(-)dd.d\n
 const MAX_UNIQUE_STATIONS: usize = 10_000;
-const BATCH_SIZE: usize = 2_500_000;
+const BATCH_SIZE: usize = 1_000_000;
 
-fn process_line(mut batch: String) -> AHashMap<String, Data> {
+fn process_batch(mut batch: String) -> AHashMap<String, Data> {
     // Batch has multiple lines contained within it
     let _ = batch.pop(); // Remove the last newline
     let lines = batch.split('\n').collect::<Vec<_>>();
@@ -89,13 +92,18 @@ fn process_line(mut batch: String) -> AHashMap<String, Data> {
 
 fn main() {
     let max_threads: usize = num_cpus::get();
-    let processing_threads = max_threads - 1;
+    let processing_threads = max_threads;
     println!("Threads: {}", processing_threads);
 
     let start = Instant::now();
 
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(processing_threads)
+        .build()
+        .unwrap();
+
     let estimated_threads = 1_000_000_000 / BATCH_SIZE;
-    let mut handles: Vec<JoinHandle<AHashMap<String, Data>>> = Vec::with_capacity(estimated_threads);
+    let results = Arc::new(Mutex::new(Vec::with_capacity(estimated_threads)));
     let mut master_map = AHashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
 
     let file = File::open(ADDRESS).expect("File not found");
@@ -103,22 +111,29 @@ fn main() {
     println!("Station: Min/Mean/Max");
     let start_read = Instant::now();
     let mut batch = String::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
-    while let Ok(bytes_read) = reader.read_line(&mut batch) {
-        if bytes_read == 0 { // Dispatch final thread
-            let handle: JoinHandle<AHashMap<String, Data>> = std::thread::spawn(move || process_line(batch));
-            handles.push(handle);
-            break;
-        } // EOF
-        if batch.len() > BATCH_SIZE * (MAX_LINE_LENGTH + 1) {
-            let cloned_batch = batch.clone();
-            let handle: JoinHandle<AHashMap<String, Data>> = std::thread::spawn(move || process_line(cloned_batch));
-            handles.push(handle);
-            batch.clear();
+    pool.scope(|s: &Scope| {
+        while let Ok(bytes_read) = reader.read_line(&mut batch) {
+            if bytes_read == 0 { // Dispatch final thread
+                let cloned_results = Arc::clone(&results);
+                s.spawn(move |_| {
+                    let result = process_batch(batch);
+                    cloned_results.lock().unwrap().push(result);
+                });
+                break;
+            } // EOF
+            if batch.len() > BATCH_SIZE * (MAX_LINE_LENGTH + 1) {
+                let cloned_batch = batch.clone();
+                let cloned_results = Arc::clone(&results);
+                s.spawn(move |_| {
+                    let result = process_batch(cloned_batch);
+                    cloned_results.lock().unwrap().push(result);
+                });
+                batch.clear();
+            }
         }
-    }
-    // Clean up any remaining threads
-    for handle in handles.drain(..) {
-        let local_map = handle.join().unwrap();
+    });
+    let results = Arc::try_unwrap(results).expect("Arc still has multiple owners");
+    for local_map in results.into_inner().unwrap().drain(..) {
         for (station, data) in local_map {
             master_map.entry(station)
                 .and_modify(|master_data| master_data.union(&data))
