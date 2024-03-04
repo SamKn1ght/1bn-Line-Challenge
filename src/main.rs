@@ -4,6 +4,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use std::fmt::{self, Display};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::thread::JoinHandle;
 use std::time::Instant;
 use ahash::AHashMap;
 
@@ -28,6 +29,13 @@ impl Data {
             self.max = value;
         }
     }
+    fn union(&mut self, other: &Data) {
+        // Assumes that the stations are the same
+        self.sum += other.sum;
+        self.count += other.count;
+        self.min = if self.min < other.min { self.min } else { other.min };
+        self.max = if self.max > other.max { self.max } else { other.max };
+    }
 }
 
 /*
@@ -45,26 +53,24 @@ Increased buffer size runtime: 76s - 28% - Reduces the number of reads to disk
 Switched to AHashMap runtime: 76s - 28%
 Switched count to be u32 runtime: 76s - 28%
 Changed to line by line reading runtime: 69s - 25% - Faster as it reduces memory allocations
+Attempted using a GPerf hash function dramatic runtime slowdown; reverted
+Added multiple threads for data processing runtime: 40s - 15% - Faster as the work is spread across the CPU
 */
 
-fn main() {
-    const ADDRESS: &str = "../measurements.txt";
-    const LINE_DELIMITER: &str = ";";
-    const MAX_LINE_LENGTH: usize = 107; // Line formatting: (name: 100);(-)dd.d\n
-    const MAX_UNIQUE_STATIONS: usize = 10_000;
+const ADDRESS: &str = "../measurements.txt";
+const LINE_DELIMITER: &str = ";";
+const MAX_LINE_LENGTH: usize = 107; // Line formatting: (name: 100);(-)dd.d\n
+const MAX_UNIQUE_STATIONS: usize = 10_000;
+const BATCH_SIZE: usize = 2_500_000;
 
-    let start = Instant::now();
+fn process_line(mut batch: String) -> AHashMap<String, Data> {
+    // Batch has multiple lines contained within it
+    let _ = batch.pop(); // Remove the last newline
+    let lines = batch.split('\n').collect::<Vec<_>>();
 
-    let mut map = AHashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
-
-    let file = File::open(ADDRESS).expect("File not found");
-    let mut reader = BufReader::with_capacity(MAX_LINE_LENGTH * 1_000, file);
-    println!("Station: Min/Mean/Max");
-    let start_read = Instant::now();
-    let mut line = String::with_capacity(MAX_LINE_LENGTH);
-    while let Ok(bytes_read) = reader.read_line(&mut line) {
-        if bytes_read == 0 { break; } // EOF
-        line.truncate(bytes_read - 1); // Remove '\n'
+    const LOCAL_CAPACITY: usize = if BATCH_SIZE > MAX_UNIQUE_STATIONS { MAX_UNIQUE_STATIONS } else { BATCH_SIZE };
+    let mut local_map = AHashMap::<String, Data>::with_capacity(LOCAL_CAPACITY);
+    for line in lines {
         let (station, value_str) = match line.split_once(LINE_DELIMITER) {
             Some((station, value_str)) => (station, value_str),
             None => unreachable!("Invalid line"),
@@ -73,17 +79,58 @@ fn main() {
             Ok(value) => value,
             Err(_) => unreachable!("Invalid value"),
         };
-        map.entry(station.to_string())
+        local_map.entry(station.to_string())
             .and_modify(|data| data.update(value))
             .or_insert_with(|| Data { sum: value, count: 1, min: value, max: value });
-        line.clear();
+    }
+
+    local_map
+}
+
+fn main() {
+    let max_threads: usize = num_cpus::get();
+    let processing_threads = max_threads - 1;
+    println!("Threads: {}", processing_threads);
+
+    let start = Instant::now();
+
+    let estimated_threads = 1_000_000_000 / BATCH_SIZE;
+    let mut handles: Vec<JoinHandle<AHashMap<String, Data>>> = Vec::with_capacity(estimated_threads);
+    let mut master_map = AHashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
+
+    let file = File::open(ADDRESS).expect("File not found");
+    let mut reader = BufReader::with_capacity(MAX_LINE_LENGTH * BATCH_SIZE, file);
+    println!("Station: Min/Mean/Max");
+    let start_read = Instant::now();
+    let mut batch = String::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
+    while let Ok(bytes_read) = reader.read_line(&mut batch) {
+        if bytes_read == 0 { // Dispatch final thread
+            let handle: JoinHandle<AHashMap<String, Data>> = std::thread::spawn(move || process_line(batch));
+            handles.push(handle);
+            break;
+        } // EOF
+        if batch.len() > BATCH_SIZE * (MAX_LINE_LENGTH + 1) {
+            let cloned_batch = batch.clone();
+            let handle: JoinHandle<AHashMap<String, Data>> = std::thread::spawn(move || process_line(cloned_batch));
+            handles.push(handle);
+            batch.clear();
+        }
+    }
+    // Clean up any remaining threads
+    for handle in handles.drain(..) {
+        let local_map = handle.join().unwrap();
+        for (station, data) in local_map {
+            master_map.entry(station)
+                .and_modify(|master_data| master_data.union(&data))
+                .or_insert(data);
+        }
     }
     let end_read = Instant::now();
     println!("Sorting Stations");
-    let mut stations = map.keys().collect::<Vec<_>>();
+    let mut stations = master_map.keys().collect::<Vec<_>>();
     stations.sort_unstable();
     for station in stations {
-        println!("{}: {}", station, map[station]);
+        println!("{}: {}", station, master_map[station]);
     }
     let end = Instant::now();
     println!("Reading: {:#?}", end_read.duration_since(start_read));
