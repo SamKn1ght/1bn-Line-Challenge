@@ -60,11 +60,17 @@ Attempted using a GPerf hash function dramatic runtime slowdown; reverted
 Added multiple threads for data processing runtime: 40s - 15% - Faster as the work is spread across the CPU
 Switched to using a rayon pool thread collecting results runtime: 40s - 15% - More efficient thread usage
 Changed to using a SegQueue runtime: 40s - 15% - Reduces lock contention by using an atomic queue
+Adjusted constants to be more reflective of the actual data rather than the worst case runtime: 39s - 14%
 */
+
+// Data Constants
+const AVERAGE_STATION_LENGTH: usize = 10;
+const MAX_STATION_LENGTH: usize = 100;
 
 const ADDRESS: &str = "../measurements.txt";
 const LINE_DELIMITER: &str = ";";
-const MAX_LINE_LENGTH: usize = 107; // Line formatting: (name: 100);(-)dd.d\n
+const MAX_LINE_LENGTH: usize = MAX_STATION_LENGTH + 7; // Line formatting: (name: 100);(-)dd.d\n
+const AVERAGE_LINE_LENGTH: usize = AVERAGE_STATION_LENGTH + 7;
 const MAX_UNIQUE_STATIONS: usize = 10_000;
 const BATCH_SIZE: usize = 1_000_000;
 
@@ -108,7 +114,7 @@ fn main() {
     let mut master_map = AHashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
 
     let file = File::open(ADDRESS).expect("File not found");
-    let mut reader = BufReader::with_capacity(MAX_LINE_LENGTH * BATCH_SIZE, file);
+    let mut reader = BufReader::with_capacity((MAX_LINE_LENGTH + 1) * BATCH_SIZE, file);
     println!("Station: Min/Mean/Max");
     let start_read = Instant::now();
     let mut batch = String::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
@@ -122,7 +128,7 @@ fn main() {
                 });
                 break;
             } // EOF
-            if batch.len() > BATCH_SIZE * (MAX_LINE_LENGTH + 1) {
+            if batch.len() > BATCH_SIZE * (AVERAGE_LINE_LENGTH + 1) {
                 let cloned_results = Arc::clone(&results);
                 s.spawn(move |_| {
                     let result = process_batch(batch);
