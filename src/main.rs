@@ -4,10 +4,11 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use std::fmt::{self, Display};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 use ahash::AHashMap;
 use rayon::{ThreadPoolBuilder, Scope};
+use crossbeam::queue::SegQueue;
 
 #[derive(Debug)]
 struct Data {
@@ -57,7 +58,8 @@ Switched count to be u32 runtime: 76s - 28%
 Changed to line by line reading runtime: 69s - 25% - Faster as it reduces memory allocations
 Attempted using a GPerf hash function dramatic runtime slowdown; reverted
 Added multiple threads for data processing runtime: 40s - 15% - Faster as the work is spread across the CPU
-Switched to using a rayon pool thread collecting results runtime: 40s - 15%
+Switched to using a rayon pool thread collecting results runtime: 40s - 15% - More efficient thread usage
+Changed to using a SegQueue runtime: 40s - 15% - Reduces lock contention by using an atomic queue
 */
 
 const ADDRESS: &str = "../measurements.txt";
@@ -102,8 +104,7 @@ fn main() {
         .build()
         .unwrap();
 
-    let estimated_threads = 1_000_000_000 / BATCH_SIZE;
-    let results = Arc::new(Mutex::new(Vec::with_capacity(estimated_threads)));
+    let results = Arc::new(SegQueue::new());
     let mut master_map = AHashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
 
     let file = File::open(ADDRESS).expect("File not found");
@@ -117,23 +118,22 @@ fn main() {
                 let cloned_results = Arc::clone(&results);
                 s.spawn(move |_| {
                     let result = process_batch(batch);
-                    cloned_results.lock().unwrap().push(result);
+                    cloned_results.push(result);
                 });
                 break;
             } // EOF
             if batch.len() > BATCH_SIZE * (MAX_LINE_LENGTH + 1) {
-                let cloned_batch = batch.clone();
                 let cloned_results = Arc::clone(&results);
                 s.spawn(move |_| {
-                    let result = process_batch(cloned_batch);
-                    cloned_results.lock().unwrap().push(result);
+                    let result = process_batch(batch);
+                    cloned_results.push(result);
                 });
-                batch.clear();
+                batch = String::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
             }
         }
     });
     let results = Arc::try_unwrap(results).expect("Arc still has multiple owners");
-    for local_map in results.into_inner().unwrap().drain(..) {
+    for local_map in results {
         for (station, data) in local_map {
             master_map.entry(station)
                 .and_modify(|master_data| master_data.union(&data))

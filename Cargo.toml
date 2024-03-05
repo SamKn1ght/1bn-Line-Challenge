@@ -15,6 +15,7 @@ rustflags = ["-C", "target-cpu=native"]
 
 [dependencies]
 ahash = "0.8.10"
+crossbeam = "0.8.4"
 mimalloc = "0.1.39"
 num_cpus = "1.16.0"
 rayon = "1.9.0"
