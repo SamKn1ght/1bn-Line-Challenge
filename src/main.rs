@@ -3,7 +3,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::fmt::{self, Display};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufReader, Read};
 use std::sync::Arc;
 use std::time::Instant;
 use ahash::AHashMap;
@@ -61,6 +61,8 @@ Added multiple threads for data processing runtime: 40s - 15% - Faster as the wo
 Switched to using a rayon pool thread collecting results runtime: 40s - 15% - More efficient thread usage
 Changed to using a SegQueue runtime: 40s - 15% - Reduces lock contention by using an atomic queue
 Adjusted constants to be more reflective of the actual data rather than the worst case runtime: 39s - 14%
+Read from the buffer in chunks of data runtime: 12s - 4% - Reduces the number of reads to disk
+    ** This had a large impact on memory usage, peaking around 10GB rather than the previous 1GB
 */
 
 // Data Constants
@@ -70,7 +72,7 @@ const MAX_STATION_LENGTH: usize = 100;
 const ADDRESS: &str = "../measurements.txt";
 const LINE_DELIMITER: &str = ";";
 const MAX_LINE_LENGTH: usize = MAX_STATION_LENGTH + 7; // Line formatting: (name: 100);(-)dd.d\n
-const AVERAGE_LINE_LENGTH: usize = AVERAGE_STATION_LENGTH + 7;
+const AVERAGE_LINE_LENGTH: usize = AVERAGE_STATION_LENGTH + 6;
 const MAX_UNIQUE_STATIONS: usize = 10_000;
 const BATCH_SIZE: usize = 1_000_000;
 
@@ -84,8 +86,12 @@ fn process_batch(mut batch: String) -> AHashMap<String, Data> {
     for line in lines {
         let (station, value_str) = match line.split_once(LINE_DELIMITER) {
             Some((station, value_str)) => (station, value_str),
-            None => unreachable!("Invalid line"),
+            None => {
+                println!("Invalid line: {}", line);
+                unreachable!("Invalid line")
+            },
         };
+        assert!((3..=5).contains(&value_str.len()), "Invalid value string {}", value_str);
         let value = match value_str.parse::<f64>() {
             Ok(value) => value,
             Err(_) => unreachable!("Invalid value"),
@@ -117,33 +123,44 @@ fn main() {
     let mut reader = BufReader::with_capacity((MAX_LINE_LENGTH + 1) * BATCH_SIZE, file);
     println!("Station: Min/Mean/Max");
     let start_read = Instant::now();
-    let mut batch = String::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
+    let mut batch = Vec::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
+    let mut remainder = Vec::with_capacity(MAX_LINE_LENGTH + 1);
     pool.scope(|s: &Scope| {
-        while let Ok(bytes_read) = reader.read_line(&mut batch) {
-            if bytes_read == 0 { // Dispatch final thread
-                let cloned_results = Arc::clone(&results);
-                s.spawn(move |_| {
-                    let result = process_batch(batch);
-                    cloned_results.push(result);
-                });
+        loop {
+            batch.clear();
+            batch.extend_from_slice(&remainder);
+            remainder.clear();
+            let bytes_read = reader.by_ref().take((BATCH_SIZE * (AVERAGE_LINE_LENGTH + 1)) as u64).read_to_end(&mut batch).unwrap();
+            if bytes_read == 0 { // EOF reached
                 break;
-            } // EOF
-            if batch.len() > BATCH_SIZE * (AVERAGE_LINE_LENGTH + 1) {
-                let cloned_results = Arc::clone(&results);
-                s.spawn(move |_| {
-                    let result = process_batch(batch);
-                    cloned_results.push(result);
-                });
-                batch = String::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
             }
+            if let Some(last_newline) = batch.iter().rposition(|&b| b == b'\n') {
+                remainder = batch.split_off(last_newline + 1);
+            }
+            if !remainder.is_empty() && remainder[0] & 0b1100_0000 == 0b1000_0000 {
+                let mut char_start = remainder.len();
+                while char_start > 0 && remainder[char_start - 1] & 0b1100_0000 == 0b1000_0000 {
+                    char_start -= 1;
+                }
+                let incomplete_char = remainder.split_off(char_start);
+                batch.extend(incomplete_char);
+            }
+            let cloned_results = Arc::clone(&results);
+            s.spawn(move |_| {
+                let batch_str = String::from_utf8(batch).expect("Invalid UTF-8");
+                let result = process_batch(batch_str);
+                cloned_results.push(result);
+            });
+            batch = Vec::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
         }
     });
+    println!("Collecting results");
     let results = Arc::try_unwrap(results).expect("Arc still has multiple owners");
     for local_map in results {
         for (station, data) in local_map {
             master_map.entry(station)
-                .and_modify(|master_data| master_data.union(&data))
-                .or_insert(data);
+            .and_modify(|master_data| master_data.union(&data))
+            .or_insert(data);
         }
     }
     let end_read = Instant::now();

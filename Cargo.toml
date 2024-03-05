@@ -8,7 +8,7 @@ edition = "2021"
 [profile.release]
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# panic = "abort"
 
 [build]
 rustflags = ["-C", "target-cpu=native"]
