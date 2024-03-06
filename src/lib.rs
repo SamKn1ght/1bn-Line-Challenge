@@ -8,22 +8,25 @@ use std::sync::Arc;
 use rayon::{ThreadPoolBuilder, Scope};
 use crossbeam::queue::SegQueue;
 use hashbrown::HashMap;
-use fast_float::parse;
 
 #[derive(Debug)]
 struct Data {
-    sum: f64,
+    sum: i32,
     count: u32,
-    min: f64,
-    max: f64,
+    min: i32,
+    max: i32,
 }
 impl Display for Data {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}/{:.1}/{}", self.min, self.sum / self.count as f64, self.max)
+        write!(f, "{}/{:.1}/{}",
+            self.min as f64 / 10.0,
+            self.sum as f64 / self.count as f64 / 10.0,
+            self.max as f64 / 10.0,
+        )
     }
 }
 impl Data {
-    fn update(&mut self, value: f64) {
+    fn update(&mut self, value: i32) {
         self.sum += value;
         self.count += 1;
         if value < self.min {
@@ -72,6 +75,8 @@ Changed to fast float parsing - 10.32s - 1.1% improvement
 Switched to custom lines splitting - 8.50s - 17.7% improvement
     ** Uses the fact that the line delimiter will always be within the last 6 characters
     ** More optimal to search from the right side for the delimiter
+Changed from f64 to i32 to store values using a custom parser - 8.04s - 5.4% improvement
+    ** Still has some optimisation potential in the parser
 */
 
 // Data Constants
@@ -89,6 +94,28 @@ fn split_line(line: &str) -> Option<(&str, &str)> {
     Some((&line[..delimiter], &line[delimiter + 1..]))
 }
 
+fn parse_i32(value: &str) -> i32 {
+    let characters = value.chars().rev();
+    let mut result = 0;
+    let mut place_value = 1;
+    if value.as_bytes()[0] == b'-' {
+        for character in characters.take(value.len() - 1) {
+            if character == '.' { continue; }
+            let digit = character.to_digit(10).unwrap() as i32;
+            result -= digit * place_value;
+            place_value *= 10;
+        }
+    } else {
+        for character in characters {
+            if character == '.' { continue; }
+            let digit = character.to_digit(10).unwrap() as i32;
+            result += digit * place_value;
+            place_value *= 10;
+        }
+    }
+    result
+}
+
 fn process_batch(mut batch: String) -> HashMap<String, Data> {
     // Batch has multiple lines contained within it
     let _ = batch.pop(); // Remove the last newline
@@ -101,10 +128,7 @@ fn process_batch(mut batch: String) -> HashMap<String, Data> {
             Some((station, value_str)) => (station, value_str),
             None => unreachable!("Invalid line"),
         };
-        let value = match parse::<f64, _>(value_str.as_bytes()) {
-            Ok(value) => value,
-            Err(_) => unreachable!("Invalid value"),
-        };
+        let value = parse_i32(value_str);
         local_map.entry(station.to_string())
             .and_modify(|data| data.update(value))
             .or_insert_with(|| Data { sum: value, count: 1, min: value, max: value });
@@ -182,4 +206,21 @@ pub fn process_file(address: &str) {
     }
     writeln!(stdout, "}}").unwrap();
     stdout.flush().unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::parse_i32;
+
+    #[test]
+    fn test_parse_i32() {
+        assert_eq!(parse_i32("-12.3"), -123);
+        assert_eq!(parse_i32("12.3"), 123);
+        assert_eq!(parse_i32("-1.3"), -13);
+        assert_eq!(parse_i32("2.3"), 23);
+        assert_eq!(parse_i32("-0.3"), -3);
+        assert_eq!(parse_i32("0.3"), 3);
+    }
+
 }
