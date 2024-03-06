@@ -62,6 +62,9 @@ Changed to using a SegQueue runtime: 40s - 15% - Reduces lock contention by usin
 Adjusted constants to be more reflective of the actual data rather than the worst case runtime: 39s - 14%
 Read from the buffer in chunks of data runtime: 12s - 4% - Reduces the number of reads to disk
     ** This had a large impact on memory usage, peaking around 10GB rather than the previous 1GB
+
+Profiler Optimisations:
+Small changes to the threads data - 10.96s - 18.1% improvement on previous
 */
 
 // Data Constants
@@ -77,7 +80,7 @@ const BATCH_SIZE: usize = 1_000_000;
 fn process_batch(mut batch: String) -> AHashMap<String, Data> {
     // Batch has multiple lines contained within it
     let _ = batch.pop(); // Remove the last newline
-    let lines = batch.split('\n').collect::<Vec<_>>();
+    let lines = batch.split('\n');
 
     const LOCAL_CAPACITY: usize = if BATCH_SIZE > MAX_UNIQUE_STATIONS { MAX_UNIQUE_STATIONS } else { BATCH_SIZE };
     let mut local_map = AHashMap::<String, Data>::with_capacity(LOCAL_CAPACITY);
@@ -89,7 +92,6 @@ fn process_batch(mut batch: String) -> AHashMap<String, Data> {
                 unreachable!("Invalid line")
             },
         };
-        assert!((3..=5).contains(&value_str.len()), "Invalid value string {}", value_str);
         let value = match value_str.parse::<f64>() {
             Ok(value) => value,
             Err(_) => unreachable!("Invalid value"),
@@ -138,8 +140,8 @@ pub fn process_file(address: &str) {
                 batch.extend(incomplete_char);
             }
             let cloned_results = Arc::clone(&results);
-            s.spawn(move |_| {
-                let batch_str = String::from_utf8(batch).expect("Invalid UTF-8");
+            s.spawn(move |_| unsafe {
+                let batch_str = String::from_utf8_unchecked(batch);
                 let result = process_batch(batch_str);
                 cloned_results.push(result);
             });
