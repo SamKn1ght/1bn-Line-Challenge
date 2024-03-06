@@ -5,9 +5,9 @@ use std::fmt::{self, Display};
 use std::fs::File;
 use std::io::{stdout, BufReader, BufWriter, Read, Write};
 use std::sync::Arc;
-use ahash::AHashMap;
 use rayon::{ThreadPoolBuilder, Scope};
 use crossbeam::queue::SegQueue;
+use hashbrown::HashMap;
 
 #[derive(Debug)]
 struct Data {
@@ -66,6 +66,7 @@ Read from the buffer in chunks of data runtime: 12s - 4% - Reduces the number of
 Profiler Optimisations:
 Small changes to the threads data - 10.96s - 18.1% improvement
 Changed to using a buffer that flushes to stdout - 10.82s - 1.3% improvement
+Changed Hashmap implementation - 10.44s - 2.4% improvement
 */
 
 // Data Constants
@@ -78,13 +79,13 @@ const AVERAGE_LINE_LENGTH: usize = AVERAGE_STATION_LENGTH + 6;
 const MAX_UNIQUE_STATIONS: usize = 10_000;
 const BATCH_SIZE: usize = 1_000_000;
 
-fn process_batch(mut batch: String) -> AHashMap<String, Data> {
+fn process_batch(mut batch: String) -> HashMap<String, Data> {
     // Batch has multiple lines contained within it
     let _ = batch.pop(); // Remove the last newline
     let lines = batch.split('\n');
 
     const LOCAL_CAPACITY: usize = if BATCH_SIZE > MAX_UNIQUE_STATIONS { MAX_UNIQUE_STATIONS } else { BATCH_SIZE };
-    let mut local_map = AHashMap::<String, Data>::with_capacity(LOCAL_CAPACITY);
+    let mut local_map = HashMap::<String, Data>::with_capacity(LOCAL_CAPACITY);
     for line in lines {
         let (station, value_str) = match line.split_once(LINE_DELIMITER) {
             Some((station, value_str)) => (station, value_str),
@@ -115,7 +116,7 @@ pub fn process_file(address: &str) {
         .unwrap();
 
     let results = Arc::new(SegQueue::new());
-    let mut master_map = AHashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
+    let mut master_map = HashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
     let file = File::open(address).expect("File not found");
     let mut reader = BufReader::with_capacity((MAX_LINE_LENGTH + 1) * BATCH_SIZE, file);
     let mut batch = Vec::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
