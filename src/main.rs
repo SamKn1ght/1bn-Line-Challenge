@@ -69,7 +69,6 @@ Read from the buffer in chunks of data runtime: 12s - 4% - Reduces the number of
 const AVERAGE_STATION_LENGTH: usize = 10;
 const MAX_STATION_LENGTH: usize = 100;
 
-const ADDRESS: &str = "../measurements.txt";
 const LINE_DELIMITER: &str = ";";
 const MAX_LINE_LENGTH: usize = MAX_STATION_LENGTH + 7; // Line formatting: (name: 100);(-)dd.d\n
 const AVERAGE_LINE_LENGTH: usize = AVERAGE_STATION_LENGTH + 6;
@@ -119,7 +118,9 @@ fn main() {
     let results = Arc::new(SegQueue::new());
     let mut master_map = AHashMap::<String, Data>::with_capacity(MAX_UNIQUE_STATIONS);
 
-    let file = File::open(ADDRESS).expect("File not found");
+    let address = std::env::var("MEASUREMENTS_FILE").expect("No file specified");
+
+    let file = File::open(address).expect("File not found");
     let mut reader = BufReader::with_capacity((MAX_LINE_LENGTH + 1) * BATCH_SIZE, file);
     println!("Station: Min/Mean/Max");
     let start_read = Instant::now();
