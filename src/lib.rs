@@ -69,17 +69,25 @@ Small changes to the threads data - 10.96s - 18.1% improvement
 Changed to using a buffer that flushes to stdout - 10.82s - 1.3% improvement
 Changed Hashmap implementation - 10.44s - 2.4% improvement
 Changed to fast float parsing - 10.32s - 1.1% improvement
+Switched to custom lines splitting - 8.50s - 17.7% improvement
+    ** Uses the fact that the line delimiter will always be within the last 6 characters
+    ** More optimal to search from the right side for the delimiter
 */
 
 // Data Constants
 const AVERAGE_STATION_LENGTH: usize = 10;
 const MAX_STATION_LENGTH: usize = 100;
 
-const LINE_DELIMITER: &str = ";";
+const LINE_DELIMITER: char = ';';
 const MAX_LINE_LENGTH: usize = MAX_STATION_LENGTH + 7; // Line formatting: (name: 100);(-)dd.d\n
 const AVERAGE_LINE_LENGTH: usize = AVERAGE_STATION_LENGTH + 6;
 const MAX_UNIQUE_STATIONS: usize = 10_000;
 const BATCH_SIZE: usize = 1_000_000;
+
+fn split_line(line: &str) -> Option<(&str, &str)> {
+    let delimiter = line.rfind(LINE_DELIMITER)?;
+    Some((&line[..delimiter], &line[delimiter + 1..]))
+}
 
 fn process_batch(mut batch: String) -> HashMap<String, Data> {
     // Batch has multiple lines contained within it
@@ -89,12 +97,9 @@ fn process_batch(mut batch: String) -> HashMap<String, Data> {
     const LOCAL_CAPACITY: usize = if BATCH_SIZE > MAX_UNIQUE_STATIONS { MAX_UNIQUE_STATIONS } else { BATCH_SIZE };
     let mut local_map = HashMap::<String, Data>::with_capacity(LOCAL_CAPACITY);
     for line in lines {
-        let (station, value_str) = match line.split_once(LINE_DELIMITER) {
+        let (station, value_str) = match split_line(line) {
             Some((station, value_str)) => (station, value_str),
-            None => {
-                println!("Invalid line: {}", line);
-                unreachable!("Invalid line")
-            },
+            None => unreachable!("Invalid line"),
         };
         let value = match parse::<f64, _>(value_str.as_bytes()) {
             Ok(value) => value,
