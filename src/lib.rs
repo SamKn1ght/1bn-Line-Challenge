@@ -8,6 +8,7 @@ use std::sync::Arc;
 use rayon::{ThreadPoolBuilder, Scope};
 use crossbeam::queue::SegQueue;
 use hashbrown::HashMap;
+use fast_float::parse;
 
 #[derive(Debug)]
 struct Data {
@@ -67,6 +68,7 @@ Profiler Optimisations:
 Small changes to the threads data - 10.96s - 18.1% improvement
 Changed to using a buffer that flushes to stdout - 10.82s - 1.3% improvement
 Changed Hashmap implementation - 10.44s - 2.4% improvement
+Changed to fast float parsing - 10.32s - 1.1% improvement
 */
 
 // Data Constants
@@ -94,7 +96,7 @@ fn process_batch(mut batch: String) -> HashMap<String, Data> {
                 unreachable!("Invalid line")
             },
         };
-        let value = match value_str.parse::<f64>() {
+        let value = match parse::<f64, _>(value_str.as_bytes()) {
             Ok(value) => value,
             Err(_) => unreachable!("Invalid value"),
         };
