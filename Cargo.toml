@@ -13,6 +13,13 @@ panic = "abort"
 [build]
 rustflags = ["-C", "target-cpu=native"]
 
+[[bench]]
+name = "benchmark"
+harness = false
+
+[dev-dependencies]
+criterion = "0.5.1"
+
 [dependencies]
 ahash = "0.8.10"
 crossbeam = "0.8.4"
