@@ -3,7 +3,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::fmt::{self, Display};
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{stdout, BufReader, BufWriter, Read, Write};
 use std::sync::Arc;
 use ahash::AHashMap;
 use rayon::{ThreadPoolBuilder, Scope};
@@ -64,7 +64,8 @@ Read from the buffer in chunks of data runtime: 12s - 4% - Reduces the number of
     ** This had a large impact on memory usage, peaking around 10GB rather than the previous 1GB
 
 Profiler Optimisations:
-Small changes to the threads data - 10.96s - 18.1% improvement on previous
+Small changes to the threads data - 10.96s - 18.1% improvement
+Changed to using a buffer that flushes to stdout - 10.82s - 1.3% improvement
 */
 
 // Data Constants
@@ -158,7 +159,19 @@ pub fn process_file(address: &str) {
     }
     let mut stations = master_map.keys().collect::<Vec<_>>();
     stations.sort_unstable();
-    for station in stations {
-        println!("{}: {}", station, master_map[station]);
+
+    let writer_capacity: usize = stations.len() * (AVERAGE_STATION_LENGTH + 21);
+
+    let num_stations = stations.len();
+    let mut stations_iter = stations.into_iter();
+    let mut stdout = BufWriter::with_capacity(writer_capacity, stdout());
+    write!(stdout, "{{").unwrap();
+    for station in stations_iter.by_ref().take(num_stations - 1) {
+        write!(stdout, "{}={}, ", station, master_map[station]).unwrap();
     }
+    if let Some(station) = stations_iter.next() {
+        write!(stdout, "{}={}", station, master_map[station]).unwrap();
+    }
+    writeln!(stdout, "}}").unwrap();
+    stdout.flush().unwrap();
 }
