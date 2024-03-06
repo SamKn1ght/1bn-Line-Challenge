@@ -116,6 +116,15 @@ fn parse_i32(value: &str) -> i32 {
     result
 }
 
+fn process_line(line: &str) -> (&str, i32) {
+    let (station, value_str) = match split_line(line) {
+        Some((station, value_str)) => (station, value_str),
+        None => unreachable!("Invalid line"),
+    };
+    let value = parse_i32(value_str);
+    (station, value)
+}
+
 fn process_batch(mut batch: String) -> HashMap<String, Data> {
     // Batch has multiple lines contained within it
     let _ = batch.pop(); // Remove the last newline
@@ -124,11 +133,7 @@ fn process_batch(mut batch: String) -> HashMap<String, Data> {
     const LOCAL_CAPACITY: usize = if BATCH_SIZE > MAX_UNIQUE_STATIONS { MAX_UNIQUE_STATIONS } else { BATCH_SIZE };
     let mut local_map = HashMap::<String, Data>::with_capacity(LOCAL_CAPACITY);
     for line in lines {
-        let (station, value_str) = match split_line(line) {
-            Some((station, value_str)) => (station, value_str),
-            None => unreachable!("Invalid line"),
-        };
-        let value = parse_i32(value_str);
+        let (station, value) = process_line(line);
         local_map.entry(station.to_string())
             .and_modify(|data| data.update(value))
             .or_insert_with(|| Data { sum: value, count: 1, min: value, max: value });
