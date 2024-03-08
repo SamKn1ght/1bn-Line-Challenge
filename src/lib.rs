@@ -77,6 +77,7 @@ Switched to custom lines splitting - 8.50s - 17.7% improvement
     ** More optimal to search from the right side for the delimiter
 Changed from f64 to i32 to store values using a custom parser - 8.04s - 5.4% improvement
     ** Still has some optimisation potential in the parser
+Improved the parse_i32 function by generalising for the data - 7.99s - 0.6% improvement
 */
 
 // Data Constants
@@ -95,25 +96,21 @@ fn split_line(line: &str) -> Option<(&str, &str)> {
 }
 
 fn parse_i32(value: &str) -> i32 {
-    let characters = value.chars().rev();
-    let mut result = 0;
-    let mut place_value = 1;
-    if value.as_bytes()[0] == b'-' {
-        for character in characters.take(value.len() - 1) {
-            if character == '.' { continue; }
-            let digit = character.to_digit(10).unwrap() as i32;
-            result -= digit * place_value;
-            place_value *= 10;
+    const ZERO: i32 = b'0' as i32;
+    let to_digit = |c: char| c as i32 - ZERO;
+
+    let mut characters = value.chars().rev();
+    let mut result = to_digit(characters.next().unwrap());
+    let character = characters.nth(1).unwrap();
+    result += to_digit(character) * 10;
+    if let Some(character) = characters.next() {
+        if character == '-' {
+            return -result;
         }
-    } else {
-        for character in characters {
-            if character == '.' { continue; }
-            let digit = character.to_digit(10).unwrap() as i32;
-            result += digit * place_value;
-            place_value *= 10;
-        }
+        result += to_digit(character) * 100;
     }
-    result
+    if characters.next().is_some() { -result }
+    else { result }
 }
 
 fn process_line(line: &str) -> (&str, i32) {
