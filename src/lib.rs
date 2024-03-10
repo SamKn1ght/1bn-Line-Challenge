@@ -78,12 +78,14 @@ Switched to custom lines splitting - 8.50s - 17.7% improvement
 Changed from f64 to i32 to store values using a custom parser - 8.04s - 5.4% improvement
     ** Still has some optimisation potential in the parser
 Improved the parse_i32 function by generalising for the data - 7.99s - 0.6% improvement
+Tuned size of the thread pool - 7.56s - 5.6% improvement
 */
 
 // Data Constants
 const AVERAGE_STATION_LENGTH: usize = 10;
 const MAX_STATION_LENGTH: usize = 100;
 
+const NEW_LINE: char = '\n';
 const LINE_DELIMITER: char = ';';
 const MAX_LINE_LENGTH: usize = MAX_STATION_LENGTH + 7; // Line formatting: (name: 100);(-)dd.d\n
 const AVERAGE_LINE_LENGTH: usize = AVERAGE_STATION_LENGTH + 6;
@@ -122,10 +124,9 @@ fn process_line(line: &str) -> (&str, i32) {
     (station, value)
 }
 
-fn process_batch(mut batch: String) -> HashMap<String, Data> {
-    // Batch has multiple lines contained within it
-    let _ = batch.pop(); // Remove the last newline
-    let lines = batch.split('\n');
+fn process_batch(batch: &str) -> HashMap<String, Data> {
+    // Batch has multiple lines contained within it;
+    let lines = batch[..batch.len() - 1].split(NEW_LINE);
 
     const LOCAL_CAPACITY: usize = if BATCH_SIZE > MAX_UNIQUE_STATIONS { MAX_UNIQUE_STATIONS } else { BATCH_SIZE };
     let mut local_map = HashMap::<String, Data>::with_capacity(LOCAL_CAPACITY);
@@ -141,7 +142,7 @@ fn process_batch(mut batch: String) -> HashMap<String, Data> {
 
 pub fn process_file(address: &str) {
     let max_threads: usize = num_cpus::get();
-    let processing_threads = max_threads;
+    let processing_threads = max_threads * 2;
 
     let pool = ThreadPoolBuilder::new()
         .num_threads(processing_threads)
@@ -177,7 +178,7 @@ pub fn process_file(address: &str) {
             let cloned_results = Arc::clone(&results);
             s.spawn(move |_| unsafe {
                 let batch_str = String::from_utf8_unchecked(batch);
-                let result = process_batch(batch_str);
+                let result = process_batch(&batch_str);
                 cloned_results.push(result);
             });
             batch = Vec::with_capacity(BATCH_SIZE * (MAX_LINE_LENGTH + 1));
@@ -213,7 +214,7 @@ pub fn process_file(address: &str) {
 #[cfg(test)]
 mod tests {
 
-    use super::parse_i32;
+    use super::*;
 
     #[test]
     fn test_parse_i32() {
